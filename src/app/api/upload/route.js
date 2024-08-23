@@ -1,35 +1,61 @@
-import OpenAI from 'openai';
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
-import * as pdfjsLib from 'pdfjs-dist/webpack.mjs';
-import sharp from 'sharp';
+import OpenAI from 'openai';
+import { google } from 'googleapis';
+import Canvas from 'canvas';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const openai = new OpenAI();
 
-async function convertPdfToImage(pdfPath) {
-  const data = new Uint8Array(await fs.readFile(pdfPath));
-  const pdf = await pdfjsLib.getDocument(data).promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2.0 });
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = Canvas.createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    return { canvas, context };
+  }
 
-  const canvas = createCanvas(viewport.width, viewport.height);
-  const context = canvas.getContext('2d');
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
 
-  await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-  const pngBuffer = canvas.toBuffer('image/png');
-  const jpegBuffer = await sharp(pngBuffer)
-    .jpeg({ quality: 90 })
-    .toBuffer();
-
-  return jpegBuffer;
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
 }
 
-function createCanvas(width, height) {
-  const { createCanvas } = require('canvas');
-  return createCanvas(width, height);
+async function convertPdfToImage(pdfBuffer) {
+  const canvasFactory = new NodeCanvasFactory();
+  const loadingTask = getDocument({
+    data: pdfBuffer,
+    canvasFactory,
+  });
+
+  try {
+    const pdfDocument = await loadingTask.promise;
+    const page = await pdfDocument.getPage(1);
+    const viewport = page.getViewport({ scale: 2.0 }); // Increase scale for higher quality
+    const canvasAndContext = canvasFactory.create(viewport.width, viewport.height);
+    const renderContext = {
+      canvasContext: canvasAndContext.context,
+      viewport,
+    };
+
+    await page.render(renderContext).promise;
+    const imageBuffer = canvasAndContext.canvas.toBuffer('image/png');
+
+    // Release page resources
+    page.cleanup();
+
+    return imageBuffer;
+  } catch (error) {
+    console.error('Error converting PDF to image:', error);
+    throw error;
+  }
 }
 
 export async function POST(request) {
@@ -43,16 +69,10 @@ export async function POST(request) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  // Save the file temporarily
-  const tmpDir = path.join(process.cwd(), 'tmp');
-  await fs.mkdir(tmpDir, { recursive: true });
-  const filePath = path.join(tmpDir, file.name);
-  await fs.writeFile(filePath, buffer);
-
   try {
     let imageBuffer;
     if (file.type === 'application/pdf') {
-      imageBuffer = await convertPdfToImage(filePath);
+      imageBuffer = await convertPdfToImage(buffer);
     } else if (file.type.startsWith('image/')) {
       imageBuffer = buffer;
     } else {
@@ -69,7 +89,7 @@ export async function POST(request) {
           role: "user",
           content: [
             { type: "text", text: "Transcribe all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data." },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+            { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } }
           ],
         },
       ],
@@ -110,9 +130,6 @@ export async function POST(request) {
         values: transcribedData,
       },
     });
-
-    // Clean up temporary file
-    await fs.unlink(filePath);
 
     return NextResponse.json({
       message: 'File processed, transcribed, and sheet created successfully',

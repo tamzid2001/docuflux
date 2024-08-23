@@ -2,7 +2,6 @@
 import React, { useState, useRef } from 'react';
 import { Box, Button, Typography, Paper, Alert, CircularProgress, AlertTitle } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import TableChartIcon from '@mui/icons-material/TableChart';
 
 const colorPalette = {
   primary: '#4F46E5',
@@ -16,7 +15,6 @@ export default function Home() {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
-  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleFileChange = (event) => {
@@ -34,7 +32,7 @@ export default function Home() {
     if (!file) return;
 
     setIsUploading(true);
-    setUploadStatus('Uploading PDF...');
+    setUploadStatus('Uploading and processing PDF...');
 
     try {
       const formData = new FormData();
@@ -46,11 +44,14 @@ export default function Home() {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
+        throw new Error('Failed to upload and process file');
       }
 
-      const { message } = await uploadResponse.json();
-      setUploadStatus(`File uploaded successfully. ${message}`);
+      const { message, sheetUrl } = await uploadResponse.json();
+      setUploadStatus(`File processed successfully. ${message}`);
+      if (sheetUrl) {
+        window.open(sheetUrl, '_blank');
+      }
     } catch (error) {
       console.error('Error:', error);
       setUploadStatus(`Error: ${error.message}`);
@@ -59,46 +60,20 @@ export default function Home() {
     }
   };
 
-  const connectToGoogle = async () => {
-    try {
-      const response = await fetch('/api/google-auth');
-      if (!response.ok) {
-        throw new Error('Failed to initiate Google authentication');
-      }
-      const { authUrl } = await response.json();
-      window.location.href = authUrl;
-    } catch (error) {
-      console.error('Error:', error);
-      setUploadStatus('Error connecting to Google Sheets.');
-    }
-  };
-
   return (
     <Box className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <Box className="max-w-7xl mx-auto">
         <Box className="text-center mb-8">
           <Typography variant="h2" className="text-4xl font-bold text-indigo-600 mb-2">📄 PDF to Google Sheets</Typography>
-          <Typography variant="h5" className="text-xl text-gray-600">Upload your PDF and send it to Google Sheets</Typography>
+          <Typography variant="h5" className="text-xl text-gray-600">Upload your PDF and we'll process it into Google Sheets</Typography>
         </Box>
 
         <Alert severity="info" className="mb-8">
           <AlertTitle>Welcome to PDF to Google Sheets!</AlertTitle>
-          Upload your PDFs and send them directly to Google Sheets for processing.
+          Upload your PDFs and we'll automatically process them and create a Google Sheet for you.
         </Alert>
 
         <Paper elevation={3} className="p-6 mt-4">
-          <Box className="mb-4">
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={connectToGoogle}
-              startIcon={<TableChartIcon />}
-              className="mb-4"
-            >
-              Connect to Google Sheets
-            </Button>
-          </Box>
-
           <Box className="mb-4">
             <input
               type="file"
@@ -124,10 +99,10 @@ export default function Home() {
                 variant="contained"
                 color="primary"
                 onClick={uploadFile}
-                disabled={isUploading || !isGoogleConnected}
+                disabled={isUploading}
                 startIcon={<CloudUploadIcon />}
               >
-                {isUploading ? 'Uploading...' : 'Upload to Google Sheets'}
+                {isUploading ? 'Processing...' : 'Process and Upload'}
               </Button>
             </Box>
           )}

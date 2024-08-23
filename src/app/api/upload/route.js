@@ -45,7 +45,7 @@ export async function POST(request) {
       ],
       response_format: zodResponseFormat(TableDataExtraction, "table_data_extraction"),
     });
-
+    console.log('Transcription Response:', transcriptionResponse);
     const extractedData = transcriptionResponse.choices[0].message.parsed;
     console.log('Extracted Data:', extractedData);
 

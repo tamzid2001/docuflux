@@ -15,7 +15,6 @@
     "@mui/icons-material": "^5.16.7",
     "@mui/material": "^5.16.7",
     "@pinecone-database/pinecone": "^3.0.1",
-    "@react-pdf-viewer/core": "^3.12.0",
     "aws-sdk": "^2.1681.0",
     "axios": "^1.7.4",
     "googleapis": "^142.0.0",

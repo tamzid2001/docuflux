@@ -47,7 +47,7 @@ export async function POST(request) {
     });
     console.log('Transcription Response:', transcriptionResponse);
     const extractedData = transcriptionResponse.choices[0].message.parsed;
-    console.log('Extracted Data:', JSON.stringify(extractedData));
+    console.log('Extracted Data:', JSON.parse(extractedData));
 
     // Step 2: Create and populate Google Sheet
     const auth = new google.auth.GoogleAuth({
@@ -56,6 +56,7 @@ export async function POST(request) {
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         project_id: process.env.GOOGLE_PROJECT_ID,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });

@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { google } from 'googleapis';
+import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
 
 const openai = new OpenAI();
+
+// Define the structure for tabular data
+const TableData = z.array(z.array(z.string()));
+
+const TableDataExtraction = z.object({
+  tableData: TableData,
+  description: z.string(),
+});
 
 export async function POST(request) {
   const formData = await request.formData();
@@ -21,23 +31,24 @@ export async function POST(request) {
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString('base64');
 
-    // Step 1: Transcribe the image using OpenAI
+    // Step 1: Transcribe the image using OpenAI with structured output
     const transcriptionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4-vision-preview",
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: "Transcribe all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data." },
+            { type: "text", text: "Extract all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data. Also provide a brief description of the table content." },
             { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}` } }
           ],
         },
       ],
-      max_tokens: 10000,
+      response_format: zodResponseFormat(TableDataExtraction, "table_data_extraction"),
     });
 
-    const transcribedData = JSON.parse(transcriptionResponse.choices[0].message.content);
-    console.log('Transcription:', transcribedData);
+    const extractedData = transcriptionResponse.choices[0].message.parsed;
+    console.log('Extracted Data:', extractedData);
+
     // Step 2: Create and populate Google Sheet
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -67,7 +78,17 @@ export async function POST(request) {
       range: 'Sheet1',
       valueInputOption: 'RAW',
       resource: {
-        values: transcribedData,
+        values: extractedData.tableData,
+      },
+    });
+
+    // Add description to the sheet
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: 'Sheet2!A1',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [['Description'], [extractedData.description]],
       },
     });
 

@@ -10,7 +10,7 @@ const readFileData = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      resolve(e.target?.result);
+      resolve(e.target.result);
     };
     reader.onerror = (err) => {
       reject(err);
@@ -18,6 +18,7 @@ const readFileData = (file) => {
     reader.readAsArrayBuffer(file);
   });
 };
+
 const convertPdfToImages = async (file) => {
   const images = [];
   const data = await readFileData(file);
@@ -37,15 +38,15 @@ const convertPdfToImages = async (file) => {
 };
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<string | null>(null);
+  const [file, setFile] = useState(null);
+  const [pdfPreview, setPdfPreview] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processResult, setProcessResult] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [processResult, setProcessResult] = useState(null);
+  const fileInputRef = useRef(null);
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
       setFile(selectedFile);
@@ -60,7 +61,7 @@ export default function Home() {
       const context = canvas.getContext("2d");
       canvas.height = viewport.height;
       canvas.width = viewport.width;
-      await page.render({ canvasContext: context!, viewport: viewport }).promise;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
       setPdfPreview(canvas.toDataURL());
     } else {
       setFile(null);
@@ -98,7 +99,7 @@ export default function Home() {
       setUploadStatus(`PDF processed and ${images.length} image(s) uploaded successfully.`);
     } catch (error) {
       console.error('Error:', error);
-      setUploadStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setUploadStatus(`Error: ${error.message}`);
     } finally {
       setIsProcessing(false);
     }

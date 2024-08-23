@@ -1,113 +1,261 @@
-import Image from "next/image";
+'use client'
+import React, { useState, useEffect, useRef } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Alert, AlertTitle, Tab, Tabs, Box, TextField, Button, Typography, Select, MenuItem, Paper } from '@mui/material';
+import InfoIcon from '@mui/icons-material/Info';
+import SendIcon from '@mui/icons-material/Send';
+import BookIcon from '@mui/icons-material/Book';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import SearchIcon from '@mui/icons-material/Search';
+import LinkIcon from '@mui/icons-material/Link';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+
+const colorPalette = {
+  primary: '#4F46E5',
+  secondary: '#10B981',
+  accent: '#F59E0B',
+  background: '#FFFFFF',
+  text: '#1F2937',
+};
 
 export default function Home() {
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: `👋 Hi! I'm the AI assistant. How can I help you today?` },
+  ]);
+  const [message, setMessage] = useState('');
+  const [file, setFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [activeTab, setActiveTab] = useState('chat');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(scrollToBottom, [messages]);
+
+  const sendMessage = async () => {
+    if (!message.trim() || isLoading) return;
+
+    setIsLoading(true);
+    const userMessage = { role: 'user', content: message };
+    setMessages(prevMessages => [...prevMessages, userMessage]);
+    setMessage('');
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([...messages, userMessage]),
+      });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      setMessages(prevMessages => [...prevMessages, { role: 'assistant', content: '' }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        setMessages(prevMessages => {
+          const lastMessage = prevMessages[prevMessages.length - 1];
+          const updatedMessages = prevMessages.slice(0, -1);
+          return [...updatedMessages, { ...lastMessage, content: lastMessage.content + chunk }];
+        });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setMessages(prevMessages => [
+        ...prevMessages,
+        { role: 'assistant', content: 'Sorry, there was an error processing your request.' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files[0];
+    if (selectedFile && selectedFile.type === 'application/pdf') {
+      setFile(selectedFile);
+      setUploadStatus('PDF selected. Ready to upload.');
+    } else {
+      setFile(null);
+      setUploadStatus('Please select a PDF file.');
+    }
+  };
+
+  const uploadFile = async () => {
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadStatus('Converting PDF to image...');
+
+    try {
+      // First, convert PDF to image
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const conversionResponse = await fetch('/api/convert-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!conversionResponse.ok) {
+        throw new Error('Failed to convert PDF to image');
+      }
+
+      const { imageBlob } = await conversionResponse.json();
+
+      // Now upload the image to S3
+      setUploadStatus('Uploading image to S3...');
+      const imageFile = new File([imageBlob], 'converted-image.jpg', { type: 'image/jpeg' });
+      const s3FormData = new FormData();
+      s3FormData.append('file', imageFile);
+
+      const uploadResponse = await fetch('/api/upload-s3', {
+        method: 'POST',
+        body: s3FormData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload to S3');
+      }
+
+      const { url } = await uploadResponse.json();
+      setUploadStatus(`File uploaded successfully. URL: ${url}`);
+    } catch (error) {
+      console.error('Error:', error);
+      setUploadStatus(`Error: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleTabChange = (event, newValue) => {
+    setActiveTab(newValue);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+    <Box className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <Box className="max-w-7xl mx-auto">
+        <Box className="text-center mb-8">
+          <Typography variant="h2" className="text-4xl font-bold text-indigo-600 mb-2">🤖 AI Assistant</Typography>
+          <Typography variant="h5" className="text-xl text-gray-600">Your intelligent companion for chat and file processing</Typography>
+        </Box>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+        <Alert severity="info" className="mb-8">
+          <AlertTitle>Welcome to the AI Assistant!</AlertTitle>
+          Chat with our AI, upload PDFs for processing, and get intelligent insights.
+        </Alert>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+        <Tabs value={activeTab} onChange={handleTabChange} className="w-full">
+          <Tab label="Chat Assistant" value="chat" icon={<BookIcon />} />
+          <Tab label="File Upload" value="upload" icon={<CloudUploadIcon />} />
+        </Tabs>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+        <Paper elevation={3} className="p-6 mt-4">
+          {activeTab === 'chat' && (
+            <Box>
+              <Typography variant="h4" className="mb-4 flex items-center">
+                <BookIcon className="mr-2" /> Chat with AI Assistant
+              </Typography>
+              <Box className="h-96 overflow-y-auto mb-4 space-y-4">
+                {messages.map((msg, index) => (
+                  <Paper
+                    key={index}
+                    className={`p-3 ${
+                      msg.role === 'assistant' ? 'bg-indigo-100' : 'bg-emerald-100 ml-auto'
+                    } max-w-[80%]`}
+                  >
+                    <Typography>{msg.content}</Typography>
+                  </Paper>
+                ))}
+                <div ref={messagesEndRef} />
+              </Box>
+              <Box className="flex">
+                <TextField
+                  fullWidth
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Ask me anything..."
+                  variant="outlined"
+                  disabled={isLoading}
+                />
+                <Button
+                  onClick={sendMessage}
+                  variant="contained"
+                  color="primary"
+                  endIcon={<SendIcon />}
+                  disabled={isLoading}
+                >
+                  Send
+                </Button>
+              </Box>
+            </Box>
+          )}
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+          {activeTab === 'upload' && (
+            <Box>
+              <Typography variant="h4" className="mb-4 flex items-center">
+                <CloudUploadIcon className="mr-2" /> File Upload
+              </Typography>
+              <Box className="mb-4">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                  ref={fileInputRef}
+                />
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => fileInputRef.current.click()}
+                  startIcon={<CloudUploadIcon />}
+                >
+                  Select PDF
+                </Button>
+              </Box>
+              {file && (
+                <Box className="mb-4">
+                  <Typography>{file.name}</Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={uploadFile}
+                    disabled={isUploading}
+                    startIcon={<CloudUploadIcon />}
+                  >
+                    {isUploading ? 'Uploading...' : 'Upload to S3'}
+                  </Button>
+                </Box>
+              )}
+              {uploadStatus && (
+                <Alert severity={uploadStatus.includes('Error') ? 'error' : 'success'}>
+                  {uploadStatus}
+                </Alert>
+              )}
+            </Box>
+          )}
+        </Paper>
+      </Box>
+    </Box>
   );
 }

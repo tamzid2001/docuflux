@@ -9,7 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emotion/react": "^11.13.3",
     "@google-cloud/local-auth": "^3.0.1",
+    "@mui/icons-material": "^5.16.7",
+    "@mui/material": "^5.16.7",
+    "@pinecone-database/pinecone": "^3.0.1",
     "aws-sdk": "^2.1681.0",
     "googleapis": "^142.0.0",
     "next": "14.2.6",
@@ -17,6 +21,7 @@
     "pdf-lib": "^1.17.1",
     "react": "^18",
     "react-dom": "^18",
+    "recharts": "^2.12.7",
     "sharp": "^0.33.5",
     "zod": "^3.23.8"
   },

@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Button, Typography, Paper, Alert, CircularProgress, AlertTitle, Grid } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import { fromBlob } from 'pdf2pic';
+import { fromPath } from 'pdf2pic';
 
 const colorPalette = {
   primary: '#4F46E5',
@@ -46,7 +46,7 @@ export default function Home() {
         format: "png",
       };
 
-      const convert = fromBlob(file, options);
+      const convert = fromPath(file, options);
       const pages = await convert.bulk(-1);
       
       setConvertedImages(pages.map(page => page.base64));

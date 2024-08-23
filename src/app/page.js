@@ -1,8 +1,7 @@
 'use client'
-import React, { useState, useRef, useEffect } from 'react';
-import { Box, Button, Typography, Paper, Alert, CircularProgress, AlertTitle, Grid } from '@mui/material';
+import React, { useState, useRef } from 'react';
+import { Box, Button, Typography, Paper, Alert, CircularProgress, AlertTitle } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import { fromPath } from 'pdf2pic';
 
 const colorPalette = {
   primary: '#4F46E5',
@@ -14,78 +13,48 @@ const colorPalette = {
 
 export default function Home() {
   const [file, setFile] = useState(null);
-  const [convertedImages, setConvertedImages] = useState([]);
-  const [isConverting, setIsConverting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [filePath, setFilePath] = useState('');
   const fileInputRef = useRef(null);
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
+    if (selectedFile && selectedFile.type.startsWith('image/')) {
       setFile(selectedFile);
-      setUploadStatus('PDF selected. Ready to convert.');
-      setConvertedImages([]);
+      setUploadStatus('Image selected. Ready to upload.');
+      setFilePath('');
     } else {
       setFile(null);
-      setUploadStatus('Please select a valid PDF file.');
+      setUploadStatus('Please select a valid image file.');
     }
   };
 
-  const convertPdfToImages = async () => {
+  const uploadFile = async () => {
     if (!file) return;
 
-    setIsConverting(true);
-    setUploadStatus('Converting PDF to images...');
-
-    try {
-      const options = {
-        width: 800,
-        height: 600,
-        density: 330,
-        format: "png",
-      };
-
-      const convert = fromPath(file, options);
-      const pages = await convert.bulk(-1);
-      
-      setConvertedImages(pages.map(page => page.base64));
-      setUploadStatus('PDF converted to images. Ready to upload.');
-    } catch (error) {
-      console.error('Error converting PDF:', error);
-      setUploadStatus(`Error converting PDF: ${error.message}`);
-    } finally {
-      setIsConverting(false);
-    }
-  };
-
-  const uploadImages = async () => {
-    if (convertedImages.length === 0) return;
-
     setIsUploading(true);
-    setUploadStatus('Uploading and processing images...');
+    setUploadStatus('Uploading and processing image...');
+
+    const formData = new FormData();
+    formData.append('file', file);
 
     try {
-      const uploadPromises = convertedImages.map((base64Image, index) => {
-        const formData = new FormData();
-        const blob = base64ToBlob(base64Image);
-        formData.append('file', blob, `page-${index + 1}.png`);
-
-        return fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
+      const response = await fetch('/api/file', {
+        method: 'POST',
+        body: formData,
       });
 
-      const responses = await Promise.all(uploadPromises);
-      const results = await Promise.all(responses.map(res => res.json()));
+      if (!response.ok) {
+        throw new Error('Failed to upload and process file');
+      }
 
-      const successfulUploads = results.filter(result => result.sheetUrl);
-      if (successfulUploads.length > 0) {
-        setUploadStatus(`Successfully processed ${successfulUploads.length} images.`);
-        window.open(successfulUploads[0].sheetUrl, '_blank');
+      const data = await response.json();
+      if (data.success) {
+        setFilePath(data.path);
+        setUploadStatus('Image processed successfully.');
       } else {
-        setUploadStatus('No images were successfully processed.');
+        throw new Error(data.message || 'Unknown error occurred');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -95,35 +64,24 @@ export default function Home() {
     }
   };
 
-  const base64ToBlob = (base64) => {
-    const byteString = atob(base64.split(',')[1]);
-    const mimeString = base64.split(',')[0].split(':')[1].split(';')[0];
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    return new Blob([ab], { type: mimeString });
-  };
-
   return (
     <Box className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <Box className="max-w-7xl mx-auto">
         <Box className="text-center mb-8">
-          <Typography variant="h2" className="text-4xl font-bold text-indigo-600 mb-2">📄 PDF to Google Sheets</Typography>
-          <Typography variant="h5" className="text-xl text-gray-600">Upload your PDF, convert to images, and process into Google Sheets</Typography>
+          <Typography variant="h2" className="text-4xl font-bold text-indigo-600 mb-2">🖼️ Image to Google Sheets</Typography>
+          <Typography variant="h5" className="text-xl text-gray-600">Upload your image and we'll process it into Google Sheets</Typography>
         </Box>
 
         <Alert severity="info" className="mb-8">
-          <AlertTitle>Welcome to PDF to Google Sheets!</AlertTitle>
-          Upload your PDFs, convert them to images, and we'll process them into Google Sheets.
+          <AlertTitle>Welcome to Image to Google Sheets!</AlertTitle>
+          Upload your images and we'll automatically process them and create a Google Sheet for you.
         </Alert>
 
         <Paper elevation={3} className="p-6 mt-4">
           <Box className="mb-4">
             <input
               type="file"
-              accept=".pdf"
+              accept="image/*"
               onChange={handleFileChange}
               style={{ display: 'none' }}
               ref={fileInputRef}
@@ -134,7 +92,7 @@ export default function Home() {
               onClick={() => fileInputRef.current.click()}
               startIcon={<CloudUploadIcon />}
             >
-              Select PDF
+              Select Image
             </Button>
           </Box>
           
@@ -144,33 +102,11 @@ export default function Home() {
               <Button
                 variant="contained"
                 color="primary"
-                onClick={convertPdfToImages}
-                disabled={isConverting}
+                onClick={uploadFile}
+                disabled={isUploading}
                 startIcon={<CloudUploadIcon />}
               >
-                {isConverting ? 'Converting...' : 'Convert to Images'}
-              </Button>
-            </Box>
-          )}
-          
-          {convertedImages.length > 0 && (
-            <Box className="mb-4">
-              <Typography variant="h6" className="mb-2">Converted Images:</Typography>
-              <Grid container spacing={2}>
-                {convertedImages.map((image, index) => (
-                  <Grid item xs={12} sm={6} md={4} key={index}>
-                    <img src={image} alt={`Page ${index + 1}`} style={{ width: '100%', height: 'auto' }} />
-                  </Grid>
-                ))}
-              </Grid>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={uploadImages}
-                disabled={isUploading}
-                className="mt-4"
-              >
-                {isUploading ? 'Uploading...' : 'Upload Images to Google Sheets'}
+                {isUploading ? 'Processing...' : 'Process and Upload'}
               </Button>
             </Box>
           )}
@@ -181,7 +117,14 @@ export default function Home() {
             </Alert>
           )}
 
-          {(isConverting || isUploading) && <CircularProgress />}
+          {filePath && (
+            <Alert severity="success" className="mt-4">
+              <AlertTitle>File Uploaded Successfully</AlertTitle>
+              File uploaded to: {filePath}
+            </Alert>
+          )}
+
+          {isUploading && <CircularProgress />}
         </Paper>
       </Box>
     </Box>

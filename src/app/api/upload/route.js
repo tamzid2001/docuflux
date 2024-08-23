@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { google } from 'googleapis';
-import formidable from 'formidable';
+import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
@@ -8,17 +8,11 @@ import sharp from 'sharp';
 
 const openai = new OpenAI();
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
 async function convertPdfToImage(pdfPath) {
   const data = new Uint8Array(await fs.readFile(pdfPath));
   const pdf = await pdfjsLib.getDocument(data).promise;
   const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2.0 }); // Increase scale for higher quality
+  const viewport = page.getViewport({ scale: 2.0 });
 
   const canvas = createCanvas(viewport.width, viewport.height);
   const context = canvas.getContext('2d');
@@ -38,36 +32,31 @@ function createCanvas(width, height) {
   return createCanvas(width, height);
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).end(`Method ${req.method} Not Allowed`);
+export async function POST(request) {
+  const formData = await request.formData();
+  const file = formData.get('file');
+
+  if (!file) {
+    return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
   }
 
-  const form = new formidable.IncomingForm();
-  form.uploadDir = path.join(process.cwd(), 'tmp');
-  form.keepExtensions = true;
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  // Save the file temporarily
+  const tmpDir = path.join(process.cwd(), 'tmp');
+  await fs.mkdir(tmpDir, { recursive: true });
+  const filePath = path.join(tmpDir, file.name);
+  await fs.writeFile(filePath, buffer);
 
   try {
-    const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
-        resolve([fields, files]);
-      });
-    });
-
-    const file = files.file;
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
     let imageBuffer;
-    if (file.mimetype === 'application/pdf') {
-      imageBuffer = await convertPdfToImage(file.filepath);
-    } else if (file.mimetype.startsWith('image/')) {
-      imageBuffer = await fs.readFile(file.filepath);
+    if (file.type === 'application/pdf') {
+      imageBuffer = await convertPdfToImage(filePath);
+    } else if (file.type.startsWith('image/')) {
+      imageBuffer = buffer;
     } else {
-      return res.status(400).json({ error: 'Unsupported file type' });
+      return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
     }
 
     const base64Image = imageBuffer.toString('base64');
@@ -105,7 +94,7 @@ export default async function handler(req, res) {
     const createResponse = await sheets.spreadsheets.create({
       resource: {
         properties: {
-          title: file.originalFilename.replace(/\.[^/.]+$/, ''),
+          title: file.name.replace(/\.[^/.]+$/, ''),
         },
       },
     });
@@ -123,14 +112,14 @@ export default async function handler(req, res) {
     });
 
     // Clean up temporary file
-    await fs.unlink(file.filepath);
+    await fs.unlink(filePath);
 
-    res.status(200).json({
+    return NextResponse.json({
       message: 'File processed, transcribed, and sheet created successfully',
       sheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId}`
     });
   } catch (error) {
     console.error('Error processing file:', error);
-    res.status(500).json({ error: 'Error processing file: ' + error.message });
+    return NextResponse.json({ error: 'Error processing file: ' + error.message }, { status: 500 });
   }
 }

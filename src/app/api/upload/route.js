@@ -1,62 +1,8 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import OpenAI from 'openai';
 import { google } from 'googleapis';
-import Canvas from 'canvas';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const openai = new OpenAI();
-
-class NodeCanvasFactory {
-  create(width, height) {
-    const canvas = Canvas.createCanvas(width, height);
-    const context = canvas.getContext("2d");
-    return { canvas, context };
-  }
-
-  reset(canvasAndContext, width, height) {
-    canvasAndContext.canvas.width = width;
-    canvasAndContext.canvas.height = height;
-  }
-
-  destroy(canvasAndContext) {
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
-    canvasAndContext.canvas = null;
-    canvasAndContext.context = null;
-  }
-}
-
-async function convertPdfToImage(pdfBuffer) {
-  const canvasFactory = new NodeCanvasFactory();
-  const loadingTask = getDocument({
-    data: pdfBuffer,
-    canvasFactory,
-  });
-
-  try {
-    const pdfDocument = await loadingTask.promise;
-    const page = await pdfDocument.getPage(1);
-    const viewport = page.getViewport({ scale: 2.0 }); // Increase scale for higher quality
-    const canvasAndContext = canvasFactory.create(viewport.width, viewport.height);
-    const renderContext = {
-      canvasContext: canvasAndContext.context,
-      viewport,
-    };
-
-    await page.render(renderContext).promise;
-    const imageBuffer = canvasAndContext.canvas.toBuffer('image/png');
-
-    // Release page resources
-    page.cleanup();
-
-    return imageBuffer;
-  } catch (error) {
-    console.error('Error converting PDF to image:', error);
-    throw error;
-  }
-}
 
 export async function POST(request) {
   const formData = await request.formData();
@@ -66,20 +12,14 @@ export async function POST(request) {
     return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
   }
 
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
+  if (!file.type.startsWith('image/')) {
+    return NextResponse.json({ error: 'Uploaded file must be an image' }, { status: 400 });
+  }
 
   try {
-    let imageBuffer;
-    if (file.type === 'application/pdf') {
-      imageBuffer = await convertPdfToImage(buffer);
-    } else if (file.type.startsWith('image/')) {
-      imageBuffer = buffer;
-    } else {
-      return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
-    }
-
-    const base64Image = imageBuffer.toString('base64');
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const base64Image = buffer.toString('base64');
 
     // Step 1: Transcribe the image using OpenAI
     const transcriptionResponse = await openai.chat.completions.create({
@@ -89,7 +29,7 @@ export async function POST(request) {
           role: "user",
           content: [
             { type: "text", text: "Transcribe all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data." },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } }
+            { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}` } }
           ],
         },
       ],
@@ -114,7 +54,7 @@ export async function POST(request) {
     const createResponse = await sheets.spreadsheets.create({
       resource: {
         properties: {
-          title: file.name.replace(/\.[^/.]+$/, ''),
+          title: `Processed Image - ${new Date().toISOString()}`,
         },
       },
     });
@@ -132,11 +72,11 @@ export async function POST(request) {
     });
 
     return NextResponse.json({
-      message: 'File processed, transcribed, and sheet created successfully',
+      message: 'Image processed, transcribed, and sheet created successfully',
       sheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId}`
     });
   } catch (error) {
-    console.error('Error processing file:', error);
-    return NextResponse.json({ error: 'Error processing file: ' + error.message }, { status: 500 });
+    console.error('Error processing image:', error);
+    return NextResponse.json({ error: 'Error processing image: ' + error.message }, { status: 500 });
   }
 }

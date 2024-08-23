@@ -23,7 +23,7 @@ export async function POST(request) {
 
     // Step 1: Transcribe the image using OpenAI
     const transcriptionResponse = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",
@@ -37,7 +37,7 @@ export async function POST(request) {
     });
 
     const transcribedData = JSON.parse(transcriptionResponse.choices[0].message.content);
-
+    console.log('Transcription:', transcribedData);
     // Step 2: Create and populate Google Sheet
     const auth = new google.auth.GoogleAuth({
       credentials: {

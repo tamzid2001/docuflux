@@ -1,51 +1,75 @@
 'use client'
 import React, { useState, useRef, useEffect } from 'react';
-import { Document, Page } from 'react-pdf';
-import { pdfjs } from 'react-pdf';
-import axios from 'axios';
+import dynamic from 'next/dynamic';
 import { Box, Button, Typography, Paper, Alert, CircularProgress } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
-// Ensure pdfjs worker is loaded
-useEffect(() => {
-  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-}, []);
+// Dynamically import PDF viewer components
+const PDFViewer = dynamic(() => import('@react-pdf-viewer/core').then(mod => mod.Viewer), {
+  ssr: false,
+});
+
+// Dynamically import the styles
+const PDFViewerStyles = dynamic(() => import('@react-pdf-viewer/core/lib/styles/index.css'), {
+  ssr: false,
+});
+
+// Dynamically import pdfjs
+const PDFJS = dynamic(() => import('pdfjs-dist/webpack'), { ssr: false });
+
+const readFileData = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      resolve(e.target.result);
+    };
+    reader.onerror = (err) => {
+      reject(err);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+const convertPdfToImages = async (file) => {
+  const images = [];
+  const data = await readFileData(file);
+  const pdf = await PDFJS.getDocument(data).promise;
+  const canvas = document.createElement("canvas");
+  for (let i = 0; i < pdf.numPages; i++) {
+    const page = await pdf.getPage(i + 1);
+    const viewport = page.getViewport({ scale: 1 });
+    const context = canvas.getContext("2d");
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
+    images.push(canvas.toDataURL());
+  }
+  canvas.remove();
+  return images;
+};
 
 export default function Home() {
   const [file, setFile] = useState(null);
-  const [pdfImage, setPdfImage] = useState(null);
-  const [numPages, setNumPages] = useState(null);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [pdfUrl, setPdfUrl] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState(null);
   const fileInputRef = useRef(null);
 
-  const handleFileChange = async (event) => {
+  useEffect(() => {
+    PDFJS.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS.version}/pdf.worker.min.js`;
+  }, []);
+
+  const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
       setFile(selectedFile);
+      setPdfUrl(URL.createObjectURL(selectedFile));
       setUploadStatus('PDF selected. Ready to process.');
-      
-      // Convert the first page to an image for preview
-      const reader = new FileReader();
-      reader.onload = async function(event) {
-        const pdfData = new Uint8Array(event.target.result);
-        const pdf = await pdfjs.getDocument({data: pdfData}).promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({scale: 1.5});
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        await page.render({canvasContext: context, viewport: viewport}).promise;
-        setPdfImage(canvas.toDataURL());
-      };
-      reader.readAsArrayBuffer(selectedFile);
     } else {
       setFile(null);
-      setPdfImage(null);
+      setPdfUrl(null);
       setUploadStatus('Please select a valid PDF file.');
     }
   };
@@ -57,17 +81,26 @@ export default function Home() {
     setUploadStatus('Processing PDF...');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      const images = await convertPdfToImages(file);
 
-      const response = await axios.post('/api/process-pdf', formData, {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
         headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          images: images,
+          fileName: file.name 
+        }),
       });
 
-      setProcessResult(response.data);
-      setUploadStatus('PDF processed successfully. Ready to send to Google Sheets.');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setProcessResult(result);
+      setUploadStatus(`PDF processed and ${images.length} image(s) uploaded successfully.`);
     } catch (error) {
       console.error('Error:', error);
       setUploadStatus(`Error: ${error.message}`);
@@ -78,21 +111,21 @@ export default function Home() {
 
   const requestGoogleAuth = async () => {
     try {
-      const response = await axios.get('/api/google-auth');
-      window.location.href = response.data.authUrl;
+      const response = await fetch('/api/google-auth');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      window.location.href = data.authUrl;
     } catch (error) {
       console.error('Error:', error);
       setUploadStatus('Error requesting Google authorization.');
     }
   };
 
-  const onDocumentLoadSuccess = ({ numPages }) => {
-    setNumPages(numPages);
-    setPageNumber(1);
-  };
-
   return (
     <Box className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <PDFViewerStyles />
       <Box className="max-w-7xl mx-auto">
         <Box className="text-center mb-8">
           <Typography variant="h2" className="text-4xl font-bold text-indigo-600 mb-2">📄 PDF to Google Sheets</Typography>
@@ -128,33 +161,14 @@ export default function Home() {
                 disabled={isProcessing}
                 startIcon={<CloudUploadIcon />}
               >
-                {isProcessing ? 'Processing...' : 'Process PDF'}
+                {isProcessing ? 'Processing...' : 'Process and Upload PDF'}
               </Button>
             </Box>
           )}
 
-          {pdfImage && (
-            <Box className="mb-4">
-              <Typography variant="h6" className="mb-2">PDF Preview:</Typography>
-              <img src={pdfImage} alt="PDF preview" style={{maxWidth: '100%', height: 'auto'}} />
-            </Box>
-          )}
-
-          {file && (
-            <Box className="mb-4">
-              <Document
-                file={file}
-                onLoadSuccess={onDocumentLoadSuccess}
-              >
-                <Page pageNumber={pageNumber} />
-              </Document>
-              <Typography>Page {pageNumber} of {numPages}</Typography>
-              <Button disabled={pageNumber <= 1} onClick={() => setPageNumber(pageNumber - 1)}>
-                Previous
-              </Button>
-              <Button disabled={pageNumber >= numPages} onClick={() => setPageNumber(pageNumber + 1)}>
-                Next
-              </Button>
+          {pdfUrl && (
+            <Box className="mb-4" style={{ height: '500px' }}>
+              <PDFViewer fileUrl={pdfUrl} />
             </Box>
           )}
 

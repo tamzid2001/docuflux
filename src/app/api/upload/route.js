@@ -13,7 +13,7 @@ export default async function handler(req, res) {
         image: image,
         model: "gpt-4-vision-preview",
         prompt: "Transcribe all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data.",
-        max_tokens: 1000,
+        max_tokens: 10000,
       });
 
       const transcribedData = JSON.parse(transcriptionResponse.data.choices[0].text);

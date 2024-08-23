@@ -46,6 +46,8 @@ export async function POST(request) {
       response_format: zodResponseFormat(TableDataExtraction, "table_data_extraction"),
     });
     console.log('Transcription Response:', transcriptionResponse);
+    const extractedData3 = transcriptionResponse.choices[0].message
+    console.log('Extracted Data:', JSON.parse(extractedData3));
     const extractedData = transcriptionResponse.choices[0].message.parsed;
     console.log('Extracted Data:', JSON.parse(extractedData));
 
@@ -56,7 +58,7 @@ export async function POST(request) {
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         project_id: process.env.GOOGLE_PROJECT_ID,
-        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        private_key: process.env.GOOGLE_PRIVATE_KEY,
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });

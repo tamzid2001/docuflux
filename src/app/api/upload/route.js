@@ -46,8 +46,8 @@ export async function POST(request) {
       response_format: zodResponseFormat(TableDataExtraction, "table_data_extraction"),
     });
     console.log('Transcription Response:', transcriptionResponse);
-    const extractedData = transcriptionResponse.choices[0].message;
-    console.log('Extracted Data:', extractedData);
+    const extractedData = transcriptionResponse.choices[0].message.parsed;
+    console.log('Extracted Data:', JSON.stringify(extractedData));
 
     // Step 2: Create and populate Google Sheet
     const auth = new google.auth.GoogleAuth({

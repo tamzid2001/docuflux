@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import * as pdfjsLib from 'pdfjs-dist';
 import sharp from 'sharp';
 
 const openai = new OpenAI();

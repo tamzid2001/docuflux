@@ -3,19 +3,11 @@ import React, { useState, useRef } from 'react';
 import { Box, Button, Typography, Paper, Alert, CircularProgress, AlertTitle } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
-const colorPalette = {
-  primary: '#4F46E5',
-  secondary: '#10B981',
-  accent: '#F59E0B',
-  background: '#FFFFFF',
-  text: '#1F2937',
-};
-
 export default function Home() {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
-  const [filePath, setFilePath] = useState('');
+  const [sheetUrl, setSheetUrl] = useState('');
   const fileInputRef = useRef(null);
 
   const handleFileChange = (event) => {
@@ -23,7 +15,7 @@ export default function Home() {
     if (selectedFile && selectedFile.type.startsWith('image/')) {
       setFile(selectedFile);
       setUploadStatus('Image selected. Ready to upload.');
-      setFilePath('');
+      setSheetUrl('');
     } else {
       setFile(null);
       setUploadStatus('Please select a valid image file.');
@@ -40,21 +32,18 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/file', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to upload and process file');
-      }
-
       const data = await response.json();
-      if (data.success) {
-        setFilePath(data.path);
-        setUploadStatus('Image processed successfully.');
+
+      if (response.ok) {
+        setSheetUrl(data.sheetUrl);
+        setUploadStatus(data.message);
       } else {
-        throw new Error(data.message || 'Unknown error occurred');
+        throw new Error(data.error || 'Failed to upload and process file');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -112,15 +101,18 @@ export default function Home() {
           )}
           
           {uploadStatus && (
-            <Alert severity={uploadStatus.includes('Error') ? 'error' : 'success'}>
+            <Alert severity={uploadStatus.includes('Error') ? 'error' : 'success'} className="mb-4">
               {uploadStatus}
             </Alert>
           )}
 
-          {filePath && (
+          {sheetUrl && (
             <Alert severity="success" className="mt-4">
-              <AlertTitle>File Uploaded Successfully</AlertTitle>
-              File uploaded to: {filePath}
+              <AlertTitle>Google Sheet Created</AlertTitle>
+              Your data has been processed. View the Google Sheet here: 
+              <a href={sheetUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline">
+                Open Google Sheet
+              </a>
             </Alert>
           )}
 

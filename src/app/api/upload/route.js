@@ -39,7 +39,7 @@ export async function POST(request) {
           role: "user",
           content: [
             { type: "text", text: "Extract all tabular content from this image. Format the output as a 2D array, where each inner array represents a row of data. Also provide a brief description of the table content." },
-            { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}` } }
+            { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}`, detail: "high" } }
           ],
         },
       ],
